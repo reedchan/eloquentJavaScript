@@ -54,6 +54,11 @@ function availableNeighbors(nest) {
     return request(nest, neighbor, "ping")
       .then(() => true, () => false);
   });
+  // Syntax of Array.prototype.filter is as follows
+  // Array.prototype.filter(callback(element[, index[, array]])[, thisArg])
+  // This call to Promise.prototype.then() registers a call to filter that
+  // will filter out ping requests that returned false
+  // i.e. the ping request promise was rejected
   return Promise.all(requests).then(result => {
     return nest.neighbors.filter((_, i) => result[i]);
   });
@@ -107,30 +112,46 @@ everywhere(nest => {
 
 function findRoute(from, to, connections) {
   let work = [{at: from, via: null}];
+  // Check each object in the Array
   for (let i = 0; i < work.length; i++) {
     let {at, via} = work[i];
+    // Check each nest that is connected to at
     for (let next of connections.get(at) || []) {
+      // Return via if one of the nodes on the network is connected to to
       if (next == to) return via;
+      // Push an object onto the Array if next has not been checked
       if (!work.some(w => w.at == next)) {
+        // Initial push will be {at: next, via: next} since
+        // null || next will return next
+        // Consequent pushes will be {at: next, via: via}
+        // i.e. {at: next, via: initialAt}
         work.push({at: next, via: via || next});
       }
     }
   }
+  // to is not connected to the network
   return null;
 }
 
 function routeRequest(nest, target, type, content) {
+  // If directly connected to target, then just send it
   if (nest.neighbors.includes(target)) {
     return request(nest, target, type, content);
   } else {
+    // Search for a route to target
     let via = findRoute(nest.name, target,
                         nest.state.connections);
     if (!via) throw new Error(`No route to ${target}`);
+    // Send it to the next node along the route to target
     return request(nest, via, "route",
                    {target, type, content});
   }
 }
 
+// Handler will repeat the same behavior since there's another routeRequest
+// which will cause another "route" type request
+// Looks like when it's reached its destination, then routeRequest throws an
+// Error that is ignored since there is no callback registered
 requestType("route", (nest, {target, type, content}) => {
   return routeRequest(nest, target, type, content);
 });
